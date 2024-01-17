@@ -11,41 +11,55 @@
 #include "hardware/gpio.h"
 #include "pico/multicore.h"
 
-// define Pins
+// SPI communication Pins
 #define SCLK 18
 #define SDA 19
 #define SDI 16
 #define CS 17
-/*  0x80 in Binary is 10000000
-    we can use OR operation with 0x80 and Address value to get SPI Address Format
-    Last 7 bit indicates address of register and first bit shows Read or Write Address
+
+// define Intruppt pin
+#define INTPIN 20
+/*  First Seven Bits endicates the address of Register
+    Last Bit indicates the operation
+    Last Bit 0 indicates Write operation
+    Last Bit 1 indicates Read operation
 */
 
 #define WREG 0x00
 #define RREG 0x01
-
+/* SPI SPEED */
 #define MAX30003_SPI_SPEED 50000000
 
+/* These Vars are used to store last value of */
 unsigned int RRinterval;
 signed long ecgdata;
 unsigned int heartRate;
 
+/*  Make the CS pin high to deselect device for SPI communication */
 void cs_deselect()
 {
     gpio_put(CS, true);
 }
 
+/*  Make the CS pin LOW to select device for SPI communication */
 void cs_select()
 {
     gpio_put(CS, false);
 }
+/* This openocd command i used to connect debugger */
 // sudo openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f target/rp2040.cfg -s tcl
 
+/* This read_registers function is used to read the perticuler Register
+    reg: Register address you want to read
+    buf: buffer in which you want to store readed data
+    len: len of data you want to read
+*/
 static void read_registers(uint8_t reg, uint8_t *buf, int len)
 {
     // For this particular device, we send the device the register we want to read
     // first, then subsequently read from the device. The register is auto incrementing
     // so we don't need to keep sending the register we want, just the first.
+    /* Shift register address to left to store address on First 7 bits and make last bit 1 for Read operation */
     uint8_t read = (reg << 1) | RREG;
     cs_select();
     spi_write_blocking(spi0, &read, 1);
@@ -53,28 +67,26 @@ static void read_registers(uint8_t reg, uint8_t *buf, int len)
     cs_deselect();
 }
 
+/*  max30003RegWrite is used to write values on register
+    reg: Register address
+    data: data you want to write
+*/
 static void max30003RegWrite(uint8_t reg, uint32_t data)
 {
-    printf("Writing to MAX30003\n");
-    printf("Reg: 0x%x\n", reg);
-    printf("Val: 0x%x\n", data);
     uint8_t read[3];
-    // read_registers(reg, read, 3);
-    // printf("Pre Read: %x %x %x %x\n", reg, read[0], read[1], read[2]);
-    // Make buffer of 32 bit(4 Bytes) values
+    /*  Shift register address to left to store address on First 7 bits and make last bit 0 for Write operation
+        Make buffer of 32 bit(4 Bytes) values in this buffer first values shows address where to do write operation
+        and last 3 Bytes are values we want to write on first register
+    */
     uint8_t buffer[4] = {(reg << 1) | WREG, data >> 16, data >> 8, data};
-    printf("Split: %x %x %x %x\n", buffer[0], buffer[1], buffer[2], buffer[3]);
     cs_select();
     spi_write_blocking(spi0, buffer, 4);
     cs_deselect();
-    // sleep_ms(10);
-    // read_registers(reg, read, 3);
-    // printf("Read: %x %x %x %x\n", reg, read[0], read[1], read[2]);
 }
 
 void initiaLizeSPI()
 {
-    printf("Initializing SPI\n");
+    /* initialise the SPI */
     spi_init(spi0, MAX30003_SPI_SPEED);
     spi_set_slave(spi0, false);
     gpio_set_function(SDI, GPIO_FUNC_SPI);
@@ -91,6 +103,7 @@ void initiaLizeSPI()
     spi_set_format(spi0, 8, 0, 0, SPI_MSB_FIRST);
 }
 
+/* max30003SetsamplingRate is used to setup a SAMPLING Rate */
 void max30003SetsamplingRate(uint16_t samplingRate)
 {
     uint8_t regBuff[4] = {0};
@@ -117,7 +130,6 @@ void max30003SetsamplingRate(uint16_t samplingRate)
 
     unsigned long cnfgEcg;
     memcpy(&cnfgEcg, regBuff, 4);
-    printf("cnfg ECG %d\n", cnfgEcg);
     max30003RegWrite(CNFG_ECG, (cnfgEcg >> 8));
     /* Sync Configuration */
     max30003RegWrite(SYNCH, 0x0000);
@@ -166,6 +178,7 @@ void max30003Begin()
     sleep_ms(10);
 }
 
+/* Read and Decode RR interval and Heart rate */
 void getHRandRR(void)
 {
     uint8_t regReadBuff[4];
@@ -183,6 +196,7 @@ void getHRandRR(void)
     RRinterval = RR;
 }
 
+/* Read ECG data samples from MAX30003 */
 void getEcgSamples(void)
 {
     uint8_t regReadBuff[48];
@@ -274,6 +288,7 @@ void getEcgSamples(void)
     }
 }
 
+/* Read Revesion Id of MAX30003 to indentify if MAX30003 is connected properly */
 void max30003ReadInfo(void)
 {
     /*  INFO (0x0F) Register Map
@@ -287,14 +302,13 @@ void max30003ReadInfo(void)
     printf("MAX3003 Revesion Id: %d\n", (readBuff[0] & 0x0f));
 }
 
+/* Read STATUS Register of MAX30003 to check what is current status of MAX30003 */
 void readStatus(uint8_t *readBuff)
 {
     read_registers(STATUS, readBuff, 3);
-    // printf("STATUS0: %x  ", readBuff[0]);
-    // printf("STATUS1: %x  ", readBuff[1]);
-    // printf("STATUS2: %x\n", readBuff[2]);
 }
 
+/* Setup Intruppts */
 void setIntruppts()
 {
     /*
@@ -303,7 +317,6 @@ void setIntruppts()
         000100000000100000000011 (0x100803)
     */
     // max30003RegWrite(EN_INT2, 0x100803);
-    // sleep_ms(10);
     /*  RR AND SAMPLING INT
         000000000000011000000001 (0x601)
     */
@@ -322,6 +335,7 @@ void setIntruppts()
     sleep_ms(10);
 }
 
+/* Read Intruppt Configuration */
 void readIntruppt()
 {
     uint8_t readBuff[3];
@@ -335,19 +349,19 @@ void readIntruppt()
     printf("STATUS2: %x\n", readBuff[2]);
 }
 
+/* This is our callback function which is triggeres when we get Intruppt */
 void getDataIntrupptCallback(uint gpio, uint32_t events)
 {
-    printf("--\n");
     uint8_t status[3];
+    /* Read Status to check for what event caused to trigger intrupt */
     readStatus(status);
-    // getEcgSamples();
     if ((int)(status[1] & 0x2) == 2)
     {
         // printf("Intruppt for SAMP\n");
         getEcgSamples();
         // printf("ECG: %lu    ", ecgdata);
     }
-    
+
     if ((int)(status[1] & 0x4) == 4)
     {
         printf("Intruppt for RR Interval\n");
@@ -357,18 +371,26 @@ void getDataIntrupptCallback(uint gpio, uint32_t events)
     }
 }
 
-
 int main()
 {
+    /* initialise all stdio for printf */
     stdio_init_all();
+    /* initialise SPI interface */
     initiaLizeSPI();
+    /* Read MAX30003 Revesion ID */
     max30003ReadInfo();
+    /* Configure MAX30003 */
     max30003Begin();
+    /* Set Sampling Rate */
     max30003SetsamplingRate(SAMPLINGRATE_512);
+    /* Set Intruppts */
     setIntruppts();
+    /* Read Intruppt Configuration */
     readIntruppt();
-    gpio_pull_up(20);
-    gpio_set_irq_enabled_with_callback(20, GPIO_IRQ_LEVEL_LOW, true, &getDataIntrupptCallback);
+    /* PUll UP Intruppt pin */
+    gpio_pull_up(INTPIN);
+    /* Setup intrupt on GPIO INTPIN */
+    gpio_set_irq_enabled_with_callback(INTPIN, GPIO_IRQ_LEVEL_LOW, true, &getDataIntrupptCallback);
     while (1)
     {
         sleep_ms(1000);
