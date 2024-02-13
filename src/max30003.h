@@ -1,5 +1,5 @@
 /*
-    Written By Premchand Gat
+    @author Premchand Gat
     Github: PremchandGat
     Email: Premchandg278@gmail.com
 */
@@ -98,7 +98,7 @@ using namespace std;
 class MAX30003
 {
 public:
-    MAX30003(int cs, spi_inst_t *spiId, void (*callBack)(signed long, MAX30003CallBackType));
+    MAX30003(int cs, spi_inst_t *spiId, void (*callBack)(signed int, MAX30003CallBackType));
     void max30003SetsamplingRate(uint16_t samplingRate);
     void max30003Begin();
     void getHRandRR(void);
@@ -120,5 +120,5 @@ private:
     void max30003RegWrite(uint8_t reg, uint32_t data);
     int _cs;
     spi_inst_t *_spiId;
-    void (*_callBack)(signed long, MAX30003CallBackType);
+    void (*_callBack)(signed int, MAX30003CallBackType);
 };

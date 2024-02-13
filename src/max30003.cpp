@@ -6,7 +6,7 @@
 
 #include "max30003.h"
 
-MAX30003::MAX30003(int cs, spi_inst_t *spiId, void (*callBack)(signed long, MAX30003CallBackType))
+MAX30003::MAX30003(int cs, spi_inst_t *spiId, void (*callBack)(signed int, MAX30003CallBackType))
 {
     _spiId = spiId;
     _cs = cs;
@@ -146,7 +146,7 @@ void MAX30003::getHRandRR(void)
 
     unsigned int RR = (unsigned int)rtor * (7.8125); // 8ms
     RRinterval = RR;
-    _callBack((signed long)RRinterval, RRINTERVAL);
+    _callBack((signed int)RRinterval, RRINTERVAL);
 }
 
 /* Read ECG data samples from MAX30003 */
@@ -160,15 +160,16 @@ void MAX30003::getEcgSamples(void)
         if (eTag == 0 || eTag == 2)
         {
             /* This is valid sample */
-            unsigned long data0 = (unsigned long)(regReadBuff[0]);
-            data0 = data0 << 24;
-            unsigned long data1 = (unsigned long)(regReadBuff[1]);
-            data1 = data1 << 16;
-            unsigned long data2 = (unsigned long)(regReadBuff[2]);
-            data2 = data2 >> 6;
-            data2 = data2 & 0x03;
-            unsigned long data = (unsigned long)(data0 | data1 | data2);
-            _callBack((signed long)data, ECGDATA);
+           unsigned int data = (regReadBuff[0] << 16 | regReadBuff[1] << 8 | regReadBuff[2] & 0xc0) >> 6;
+            if ((data & 0x20000) == 0x20000)
+            {
+                signed int value = data - 262144;
+                _callBack(value, ECGDATA);
+            }
+            else
+            {
+                _callBack((signed int)data, ECGDATA);
+            }
             if (eTag == 2)
             {
                 /*Last Valid Sample (EOF)*/
@@ -312,7 +313,5 @@ void MAX30003::getDataIntrupptCallback()
     {
         // printf("Intruppt for RR Interval\n");
         getHRandRR();
-        printf("RR : %u    ", RRinterval);
-        printf("Heart Rate: %u\n\n", heartRate);
     }
 }

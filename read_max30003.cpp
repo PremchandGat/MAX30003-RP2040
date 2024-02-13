@@ -21,7 +21,7 @@
 
 /* SPI SPEED */
 #define MAX30003_SPI_SPEED 2000000
-void max3003CallBack(signed long data, MAX30003CallBackType type);
+void max3003CallBack(signed int data, MAX30003CallBackType type);
 MAX30003 max30003(CS, spi0, max3003CallBack);
 
 /* This openocd command i used to connect debugger */
@@ -51,7 +51,7 @@ void max30003Intruppt(uint gpio, uint32_t events)
     max30003.getDataIntrupptCallback();
 }
 
-void max3003CallBack(signed long data, MAX30003CallBackType type)
+void max3003CallBack(signed int data, MAX30003CallBackType type)
 {
     if (type == ECGDATA)
     {
